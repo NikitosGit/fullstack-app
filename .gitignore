@@ -1,0 +1,6 @@
+backend/__pycache__
+backend/env
+
+frontend/.angular
+frontend/.vscode
+frontend/node_modules
