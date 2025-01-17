@@ -8,7 +8,6 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 
-from fastapi import FastAPI
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel
 from datetime import datetime, timedelta, timezone
@@ -154,7 +153,7 @@ fake.add_provider(abilities_provider)
 # включающую поля username и password.
 # Depends() — это функция из FastAPI, которая указывает, что значение параметра form_data должно быть получено из запроса.
 
-@app.post("/token")
+@app.post("/auth/token")
 async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> Token:
