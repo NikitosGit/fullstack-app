@@ -8,13 +8,13 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status, Request
 from pydantic import BaseModel
 from datetime import datetime, timedelta, timezone
 
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 1
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
@@ -109,24 +109,24 @@ def create_refresh_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except InvalidTokenError:
-        raise credentials_exception
-    user = get_user(fake_users_db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
+# async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+#     credentials_exception = HTTPException(
+#         status_code=status.HTTP_401_UNAUTHORIZED,
+#         detail="Could not validate credentials",
+#         headers={"WWW-Authenticate": "Bearer"},
+#     )
+#     try:
+#         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+#         username: str = payload.get("sub")
+#         if username is None:
+#             raise credentials_exception
+#         token_data = TokenData(username=username)
+#     except InvalidTokenError:
+#         raise credentials_exception
+#     user = get_user(fake_users_db, username=token_data.username)
+#     if user is None:
+#         raise credentials_exception
+#     return user
 
 
 # async def get_current_active_user(
@@ -176,7 +176,7 @@ def validate_token_type(
     )
 
 get_current_auth_user = get_auth_user_from_token_of_type(ACCESS_TOKEN_TYPE)
-get_current_auth_user_for_refresh = get_auth_user_from_token_of_type(REFRESH_TOKEN_TYPE)
+# get_current_auth_user_for_refresh = get_auth_user_from_token_of_type(REFRESH_TOKEN_TYPE)
 
 abilities_provider = DynamicProvider(
     provider_name = "abilities",
@@ -208,6 +208,7 @@ fake.add_provider(abilities_provider)
 # включающую поля username и password.
 # Depends() — это функция из FastAPI, которая указывает, что значение параметра form_data должно быть получено из запроса.
 
+
 @app.post("/auth/token")
 async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -228,16 +229,51 @@ async def login_for_access_token(
     return Token(access_token=access_token, refresh_token=refresh_token, token_type="bearer")
 
 
-@app.post("/refresh",  response_model=Token,  response_model_exclude_none=True,)
-def auth_refresh_jwt(
-    user: User = Depends(get_current_auth_user_for_refresh),
-):
+# @app.post("/refresh",  response_model=Token,  response_model_exclude_none=True,)
+# def auth_refresh_jwt(
+#     user: User = Depends(get_current_auth_user_for_refresh),
+# ):
+#     print("refresh routes")
+#     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+#     access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
+#     return Token(
+#         access_token=access_token,
+#         token_type="bearer",
+#     )
+
+class RToken(BaseModel):
+    refresh_token: str
+
+@app.post("/refresh", response_model=Token, response_model_exclude_none=True)
+def auth_refresh_jwt(token: RToken):
+    print("refresh route")
+    print(token.refresh_token)
+    token_as_bytes = token.refresh_token.encode('ascii') 
+    try:
+        payload = jwt.decode(token_as_bytes, SECRET_KEY, algorithms=ALGORITHM)
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        user = get_user(fake_users_db, username=username)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except HTTPException:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-    )
+    return Token(access_token=access_token, token_type="bearer")
 
 
 @app.get("/users/me/", response_model=User)
@@ -278,8 +314,7 @@ def get_item(item_id: int, current_user: Annotated[User, Depends(get_current_aut
     return item
 
 @app.get("/items/", response_model=List[Item])
-async def get_items( #current_user: Annotated[User, Depends(get_current_active_user)],
-):
+async def get_items( current_user: Annotated[User, Depends(get_current_auth_user)],):
     
     resp = []
  
